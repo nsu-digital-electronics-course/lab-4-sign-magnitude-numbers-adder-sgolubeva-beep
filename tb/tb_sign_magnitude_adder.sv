@@ -1,0 +1,154 @@
+module tb_sign_magnitude_adder;
+    
+    parameter SIZE = 4;
+    
+    logic [SIZE-1:0] a, b;
+    logic [SIZE-1:0] s;
+    logic overflow;
+    
+    logic [SIZE-1:0] expected_s;
+    logic expected_overflow;
+    
+    int test_count = 0;
+    int error_count = 0;
+    
+    sign_magnitude_adder1 #(.SIZE(SIZE)) dut (
+        .a(a),
+        .b(b),
+        .s(s),
+        .overflow(overflow)
+    );
+    
+    function int sign_magnitude_to_int(logic [SIZE-1:0] sm);
+        int result;
+        if (sm[SIZE-1] == 1'b1) begin
+            result = -int'(sm[SIZE-2:0]);
+        end else begin
+            result = int'(sm[SIZE-2:0]);
+        end
+        return result;
+    endfunction
+    
+    function logic [SIZE-1:0] int_to_sign_magnitude(int value);
+        logic [SIZE-1:0] result;
+        if (value < 0) begin
+            result[SIZE-1] = 1'b1;
+            result[SIZE-2:0] = -value;
+        end else begin
+            result[SIZE-1] = 1'b0;
+            result[SIZE-2:0] = value;
+        end
+        return result;
+    endfunction
+    
+    function automatic void calculate_expected(
+        input logic [SIZE-1:0] a_in, b_in,
+        output logic [SIZE-1:0] exp_s,
+        output logic exp_ovf
+    );
+        int a_int, b_int, sum_int;
+        int max_magn = (1 << (SIZE-1)) - 1;
+        
+        a_int = sign_magnitude_to_int(a_in);
+        b_int = sign_magnitude_to_int(b_in);
+        sum_int = a_int + b_int;
+        
+        if (sum_int > max_magn) begin
+            exp_ovf = 1'b1;
+            exp_s = {1'b0, {SIZE-1{1'b1}}};
+        end else if (sum_int < -max_magn) begin
+            exp_ovf = 1'b1;
+            exp_s = {1'b1, {SIZE-1{1'b1}}};
+        end else begin
+            exp_ovf = 1'b0;
+            if (sum_int == 0) begin
+                exp_s = '0;
+            end else begin
+                exp_s = int_to_sign_magnitude(sum_int);
+            end
+        end
+    endfunction
+
+    typedef struct {
+        logic [SIZE-1:0] a;
+        logic [SIZE-1:0] b;
+        string description;
+    } test_vector_t;
+    
+    test_vector_t test_vectors[];
+    
+    initial begin
+        test_vectors = new[16];
+        
+        test_vectors[0] = '{8'h0, 8'h0, "0 + 0 = 0"};
+        test_vectors[1] = '{8'h3, 8'h2, "3 + 2 = 5"};
+        test_vectors[2] = '{8'h8, 8'hA, "-3 + -2 = -5"};
+        test_vectors[3] = '{8'h5, 8'hB, "5 + (-3) = 2"};
+        test_vectors[4] = '{8'h3, 8'hD, "3 + (-5) = -2"};
+        test_vectors[5] = '{8'h3, 8'hB, "3 + (-3) = 0"};
+        test_vectors[6] = '{8'h7, 8'h1, "7 + 1 = overflow (+)"};
+        test_vectors[7] = '{8'hF, 8'hE, "-7 + -2 = overflow (-)"};
+        test_vectors[8] = '{8'h0, 8'h5, "0 + 5 = 5"};
+        test_vectors[9] = '{8'h8, 8'h3, "-0 + 3 = 3"};
+        test_vectors[10] = '{8'h7, 8'h0, "7 + 0 = 7"};
+        test_vectors[11] = '{8'hF, 8'h0, "-7 + 0 = -7"};
+        test_vectors[12] = '{8'h2, 8'hA, "2 + (-2) = 0"};
+        test_vectors[13] = '{8'hD, 8'h7, "-5 + 7 = 2"};
+        test_vectors[14] = '{8'h3, 8'h4, "3 + 4 = 7"};
+        test_vectors[15] = '{8'hF, 8'hF, "-7 + -7 = overflow (-14)"};
+    end
+    
+    initial begin
+        $display("========================================");
+        $display("Начало тестирования sign-magnitude сумматора");
+        $display("Разрядность: %0d бит", SIZE);
+        $display("Диапазон чисел: от %0d до %0d", -(1<<(SIZE-1))+1, (1<<(SIZE-1))-1);
+        $display("========================================\n");
+        
+        for (int i = 0; i < test_vectors.size(); i++) begin
+            a = test_vectors[i].a;
+            b = test_vectors[i].b;
+            
+            #1;
+            
+            calculate_expected(a, b, expected_s, expected_overflow);
+            
+            $display("Тест %0d: %s", i+1, test_vectors[i].description);
+            $display("  a = %b (%0d), b = %b (%0d)", 
+                     a, sign_magnitude_to_int(a), 
+                     b, sign_magnitude_to_int(b));
+            $display("  Результат:   s = %b (%0d), overflow = %b", 
+                     s, sign_magnitude_to_int(s), overflow);
+            $display("  Ожидалось:   s = %b (%0d), overflow = %b", 
+                     expected_s, sign_magnitude_to_int(expected_s), expected_overflow);
+            
+            if (s !== expected_s || overflow !== expected_overflow) begin
+                $error("Несовпадение результатов");
+                error_count++;
+            end else begin
+                $display("Успешно");
+            end
+            $display("----------------------------------------\n");
+            
+            test_count++;
+        end
+        
+        $display("========================================");
+        $display("  Всего тестов: %0d", test_count);
+        $display("  Ошибок: %0d", error_count);
+        if (error_count == 0) begin
+            $display("ВСЕ ТЕСТЫ ПРОЙДЕНЫ УСПЕШНО");
+        end else begin
+            $display("ОБНАРУЖЕНЫ ОШИБКИ");
+        end
+        $display("========================================");
+        
+        #10 $finish;
+    end
+    
+    initial begin
+        $dumpfile("waveform.vcd");
+        $dumpvars(0, tb_sign_magnitude_adder);
+    end
+    
+endmodule
