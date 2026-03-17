@@ -1,0 +1,61 @@
+module sign_magnitude_adder1 #(
+    parameter SIZE = 4
+) (
+    input  logic [SIZE-1:0] a,
+    input  logic [SIZE-1:0] b,
+    output logic [SIZE-1:0] s,
+    output logic            overflow
+);
+    
+    logic a_sign, b_sign;
+    logic [SIZE-2:0] a_magn, b_magn;
+    
+    assign a_sign = a[SIZE-1];
+    assign b_sign = b[SIZE-1];
+    assign a_magn = a[SIZE-2:0];
+    assign b_magn = b[SIZE-2:0];
+    
+    logic [SIZE-1:0] sum_magn;
+    logic [SIZE-2:0] magn_result;
+    logic result_sign;
+    logic internal_overflow;
+    logic [SIZE-1:0] abs_a, abs_b;
+    
+    assign abs_a = {1'b0, a_magn};
+    assign abs_b = {1'b0, b_magn};
+    
+    always_comb begin
+    
+        result_sign = 1'b0;
+        magn_result = '0;
+        internal_overflow = 1'b0;
+        
+        if (a_sign == b_sign) begin
+            {internal_overflow, sum_magn} = {1'b0, a_magn} + {1'b0, b_magn};
+            
+            if (internal_overflow || (sum_magn[SIZE-1] == 1'b1)) begin
+                internal_overflow = 1'b1;
+                magn_result = {SIZE-1{1'b1}};
+            end else begin
+                magn_result = sum_magn[SIZE-2:0];
+            end
+            result_sign = a_sign;
+            
+        end else begin
+            if (a_magn > b_magn) begin
+                magn_result = a_magn - b_magn;
+                result_sign = a_sign;
+            end else if (b_magn > a_magn) begin
+                magn_result = b_magn - a_magn;
+                result_sign = b_sign;
+            end else begin
+                magn_result = '0;
+                result_sign = 1'b0;
+            end
+        end
+    end
+    
+    assign s = (magn_result == '0) ? {SIZE{1'b0}} : {result_sign, magn_result};
+    assign overflow = internal_overflow;
+    
+endmodule
